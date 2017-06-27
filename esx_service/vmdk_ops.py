@@ -164,8 +164,8 @@ def RunCommand(cmd):
 # for now we care about size and (maybe) policy
 def createVMDK(vmdk_path, vm_name, vol_name,
                opts={}, vm_uuid=None, tenant_uuid=None, datastore_url=None):
-    logging.info("*** createVMDK: %s opts = %s vm_name=%s vm_uuid=%s tenant_uuid=%s datastore_url=%s",
-                  vmdk_path, opts, vm_name, vm_uuid, tenant_uuid, datastore_url)
+    logging.info("*** createVMDK: %s opts=%s vm_name=%s vm_uuid=%s tenant_uuid=%s datastore_url=%s",
+                 vmdk_path, opts, vm_name, vm_uuid, tenant_uuid, datastore_url)
 
     if os.path.isfile(vmdk_path):
         # We are mostly here due to race or Plugin VMCI retry #1076
@@ -244,7 +244,8 @@ def createVMDK(vmdk_path, vm_name, vol_name,
 
 
 def cloneVMDK(vm_name, vmdk_path, opts={}, vm_uuid=None, datastore_url=None):
-    logging.info("*** cloneVMDK: %s opts = %s vm_uuid=%s datastore_url=%s", vmdk_path, opts, vm_uuid, datastore_url)
+    logging.info("*** cloneVMDK: %s opts = %s vm_uuid=%s datastore_url=%s",
+                 vmdk_path, opts, vm_uuid, datastore_url)
 
     # Get source volume path for cloning
     error_info, tenant_uuid, tenant_name = auth.get_tenant(vm_uuid)
@@ -656,7 +657,8 @@ def listVMDK(tenant):
             for x in vmdks]
 
 
-# Return VM managed object, reconnect if needed. Throws if fails twice.
+# Return VM managed object, reconnect if needed. Throws if connection fails twice.
+# returns None if the uuid is not found
 def findVmByUuid(vm_uuid):
     si = get_si()
     vm = si.content.searchIndex.FindByUuid(None, vm_uuid, True, False)
@@ -668,20 +670,34 @@ def vm_uuid2name(vm_uuid):
         return None
     return vm.config.name
 
-# Return error, or None for OK.
-def attachVMDK(vmdk_path, vm_uuid):
-    vm = findVmByUuid(vm_uuid)
-    logging.info("*** attachVMDK: %s to %s VM uuid = %s",
-                 vmdk_path, vm.config.name, vm_uuid)
-    return disk_attach(vmdk_path, vm)
+
+def attach_or_detach_VMDK(cmd, vmdk_path, vm_name, bios_uuid, vc_uuid):
+    """Attaches (if cmd="attach" or detaches a  VMDK.
+    Returns json reply to pass upstairs"""
+
+    logging.info("*** %s VMDK %s to VM '%s' , bios uuid = %s, VC uuid=%s)",
+                 cmd, vmdk_path, vm_name, vm_uuid, vc_uuid)
+    vm = findVmByUuid(vc_uuid)
+    if not vm:
+        logging.warning("Failed to find VM by VC UUID %s, trying BIOS UUID %s", vc_uuid, vm_uuid)
+        vm = findVmByUuid(bios_uuid)
+    if not vm:
+        msg = "Failed to find VM object for %s (%s %s)" % (vm_name, bios_uuid, vc_uuid)
+        logging.error(msg)
+        return err(msg)
+
+    if vm.config.name != vm_name:
+        log.warning("vm_name from vSocket '%s' does not match VM object '%s' ", vm_name, vm.config.name)
+
+    action = disk_attach if cmd == "attach" else disk_detach
+    return action(vmdk_path, vm)
 
 
 # Return error, or None for OK.
-def detachVMDK(vmdk_path, vm_uuid):
+def detachVMDK(vmdk_path, vm_uuid, vc_uuid):
     vm = findVmByUuid(vm_uuid)
-    logging.info("*** detachVMDK: %s from %s VM uuid = %s",
+    logging.info("*** detachVMDK: %s from %s VM uuid = %s (VC uuid=%s",
                  vmdk_path, vm.config.name, vm_uuid)
-    return disk_detach(vmdk_path, vm)
 
 
 # Check existence (and creates if needed) the path for docker volume VMDKs
@@ -831,7 +847,7 @@ def authorize_check(vm_uuid, datastore_url, cmd, opts, use_default_ds, datastore
 
 
 # gets the requests, calculates path for volumes, and calls the relevant handler
-def executeRequest(vm_uuid, vm_name, config_path, cmd, full_vol_name, opts):
+def executeRequest(vm_uuid, vc_uuid, vm_name, config_path, cmd, full_vol_name, opts):
     """
     Executes a <cmd> request issused from a VM.
     The request is about volume <full_volume_name> in format volume@datastore.
@@ -871,8 +887,8 @@ def executeRequest(vm_uuid, vm_name, config_path, cmd, full_vol_name, opts):
     # default_datastore could be a real datastore name or a hard coded  one "_VM_DS"
     default_datastore = get_datastore_name(default_datastore_url)
 
-    logging.debug("executeRequest: vm uuid=%s name=%s, tenant_name=%s, default_datastore=%s",
-                  vm_uuid, vm_name, tenant_name, default_datastore)
+    logging.debug("executeRequest: vm uuid=%s VC uuid=%s name=%s, tenant_name=%s, default_datastore=%s",
+                  vm_uuid, vc_uuid, vm_name, tenant_name, default_datastore)
 
     if cmd == "list":
         threadutils.set_thread_name("{0}-nolock-{1}".format(vm_name, cmd))
@@ -902,7 +918,8 @@ def executeRequest(vm_uuid, vm_name, config_path, cmd, full_vol_name, opts):
                   "default_datastore_url=%s datastore_url=%s",
                   vm_uuid, vm_name, tenant_uuid, tenant_name, default_datastore_url, datastore_url)
 
-    error_info = authorize_check(vm_uuid, datastore_url, cmd, opts, use_default_ds, datastore, vm_datastore)
+    error_info = authorize_check(vm_uuid, datastore_url, cmd, opts, use_default_ds, datastore,
+                                 vm_datastore)
     if error_info:
         return err(error_info)
 
@@ -950,12 +967,13 @@ def executeRequest(vm_uuid, vm_name, config_path, cmd, full_vol_name, opts):
                                   datastore_url=datastore_url)
 
         # For attach/detach reconfigure tasks, hold a per vm lock.
-        elif cmd == "attach":
+        elif cmd == "attach" or cmd == "detach":
+            # TBD: get VM MOREF here and pass it down. Check that MO REF name / etc.
+            # marches with what we think baed on VSI
+            # on mismatch bail out with loud cry as a rename should impact all places.
+            # TBD: try to get it first based on VC.UUID and if it fails fall back on BIOS.UUID
             with lockManager.get_lock(vm_uuid):
-                response = attachVMDK(vmdk_path, vm_uuid)
-        elif cmd == "detach":
-            with lockManager.get_lock(vm_uuid):
-                response = detachVMDK(vmdk_path, vm_uuid)
+                response = attach_or_detach_VMDK(cmd=cmd, vmdk_path=vmdk_path, vm_name=vm_name, bios_uuid=vm_uuid, vc_uuid=vc_uuid)
         else:
             return err("Unknown command:" + cmd)
 
@@ -973,7 +991,7 @@ def connectLocalSi():
 
             # Connect to local server as user "dcui" since this is the Admin that does not lose its
             # Admin permissions even when the host is in lockdown mode. User "dcui" does not have a
-            # password - it is used by the ESXi local application DCUI (Direct Console User Interface)
+            # password - it is used by local application DCUI (Direct Console User Interface)
             # Version must be set to access newer features, such as VSAN.
             _service_instance = pyVim.connect.Connect(
                 host='localhost',
@@ -1535,11 +1553,13 @@ def execRequestThread(client_socket, cartel, request):
         group_info = vsi.get("/vm/%s/vmmGroupInfo" % vmm_leader)
         vm_name = group_info["displayName"]
         cfg_path = group_info["cfgPath"]
-        uuid = group_info["uuid"]
+        uuid = group_info["uuid"]            # BIOS UUID, see http://www.virtu-al.net/2015/12/04/a-quick-reference-of-vsphere-ids/
+        vc_uuid = group_info["vcUuid"]       # VC UUID
         # pyVmomi expects uuid like this one: 564dac12-b1a0-f735-0df3-bceb00b30340
         # to get it from uuid in VSI vms/<id>/vmmGroup, we use the following format:
         UUID_FORMAT = "{0}{1}{2}{3}-{4}{5}-{6}{7}-{8}{9}-{10}{11}{12}{13}{14}{15}"
         vm_uuid = UUID_FORMAT.format(*uuid.replace("-",  " ").split())
+        vc_uuid = UUID_FORMAT.format(*vc_uuid.replace("-",  " ").split())
 
         try:
             req = json.loads(request.decode('utf-8'))
@@ -1551,7 +1571,7 @@ def execRequestThread(client_socket, cartel, request):
             # If req from client does not include version number, set the version to
             # SERVER_PROTOCOL_VERSION by default to make backward compatible
             client_protocol_version = int(req["version"]) if "version" in req else SERVER_PROTOCOL_VERSION
-            logging.debug("execRequestThread: version=%d", client_protocol_version)
+            logging.debug("execRequestThread: client protocol version=%d", client_protocol_version)
             if client_protocol_version != SERVER_PROTOCOL_VERSION:
                 if client_protocol_version < SERVER_PROTOCOL_VERSION:
                     reply_string = err("vSphere Docker Volume Service client version ({}) is older than server version ({}), "
@@ -1560,11 +1580,13 @@ def execRequestThread(client_socket, cartel, request):
                     reply_string = err("vSphere Docker Volume Service client version ({}) is newer than server version ({}), "
                                     "please update the server.".format(client_protocol_version, SERVER_PROTOCOL_VERSION))
                 send_vmci_reply(client_socket, reply_string)
-                logging.info("executeRequest '%s' failed: %s", req["cmd"], reply_string)
+                logging.warning("executeRequest '%s' failed: %s", req["cmd"], reply_string)
                 return
 
             opts = req["details"]["Opts"] if "Opts" in req["details"] else {}
-            reply_string = executeRequest(vm_uuid=vm_uuid,
+            reply_string = executeRequest(
+                                vm_uuid=vm_uuid,
+                                vc_uuid=vc_uuid,
                                 vm_name=vm_name,
                                 config_path=cfg_path,
                                 cmd=req["cmd"],
