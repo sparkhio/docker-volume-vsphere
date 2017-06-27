@@ -1560,6 +1560,8 @@ def execRequestThread(client_socket, cartel, request):
                     reply_string = err("vSphere Docker Volume Service client version ({}) is newer than server version ({}), "
                                     "please update the server.".format(client_protocol_version, SERVER_PROTOCOL_VERSION))
                 send_vmci_reply(client_socket, reply_string)
+                logging.info("executeRequest '%s' failed: %s", req["cmd"], reply_string)
+                return
 
             opts = req["details"]["Opts"] if "Opts" in req["details"] else {}
             reply_string = executeRequest(vm_uuid=vm_uuid,
