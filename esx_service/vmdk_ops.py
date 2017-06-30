@@ -672,32 +672,29 @@ def vm_uuid2name(vm_uuid):
 
 
 def attach_or_detach_VMDK(cmd, vmdk_path, vm_name, bios_uuid, vc_uuid):
+    # note: vc_uuid is the last one to avoid reworkign tests which use positional args and
+    # not aware of vc_uuid
     """Attaches (if cmd="attach" or detaches a  VMDK.
     Returns json reply to pass upstairs"""
 
     logging.info("*** %s VMDK %s to VM '%s' , bios uuid = %s, VC uuid=%s)",
-                 cmd, vmdk_path, vm_name, vm_uuid, vc_uuid)
-    vm = findVmByUuid(vc_uuid)
-    if not vm:
-        logging.warning("Failed to find VM by VC UUID %s, trying BIOS UUID %s", vc_uuid, vm_uuid)
+                 cmd, vmdk_path, vm_name, bios_uuid, vc_uuid)
+    vm = None
+    if vc_uuid:
+        vm = findVmByUuid(vc_uuid)
+    if not vm: # either vc_uuid is not even passed, or we failed to find the VM by VC uuid:
+        logging.warning("Failed to find VM by VC UUID %s, trying BIOS UUID %s", vc_uuid, bios_uuid)
         vm = findVmByUuid(bios_uuid)
-    if not vm:
-        msg = "Failed to find VM object for %s (%s %s)" % (vm_name, bios_uuid, vc_uuid)
+    if not vm: # can find VM by VC or BIOS uuid
+        msg = "Failed to find VM object for %s (bios %s vc %s)" % (vm_name, bios_uuid, vc_uuid)
         logging.error(msg)
         return err(msg)
 
     if vm.config.name != vm_name:
-        log.warning("vm_name from vSocket '%s' does not match VM object '%s' ", vm_name, vm.config.name)
+        logging.warning("vm_name from vSocket '%s' does not match VM object '%s' ", vm_name, vm.config.name)
 
     action = disk_attach if cmd == "attach" else disk_detach
     return action(vmdk_path, vm)
-
-
-# Return error, or None for OK.
-def detachVMDK(vmdk_path, vm_uuid, vc_uuid):
-    vm = findVmByUuid(vm_uuid)
-    logging.info("*** detachVMDK: %s from %s VM uuid = %s (VC uuid=%s",
-                 vmdk_path, vm.config.name, vm_uuid)
 
 
 # Check existence (and creates if needed) the path for docker volume VMDKs
@@ -847,7 +844,7 @@ def authorize_check(vm_uuid, datastore_url, cmd, opts, use_default_ds, datastore
 
 
 # gets the requests, calculates path for volumes, and calls the relevant handler
-def executeRequest(vm_uuid, vc_uuid, vm_name, config_path, cmd, full_vol_name, opts):
+def executeRequest(vm_uuid, vm_name, config_path, cmd, full_vol_name, opts, vc_uuid=None):
     """
     Executes a <cmd> request issused from a VM.
     The request is about volume <full_volume_name> in format volume@datastore.
@@ -968,12 +965,9 @@ def executeRequest(vm_uuid, vc_uuid, vm_name, config_path, cmd, full_vol_name, o
 
         # For attach/detach reconfigure tasks, hold a per vm lock.
         elif cmd == "attach" or cmd == "detach":
-            # TBD: get VM MOREF here and pass it down. Check that MO REF name / etc.
-            # marches with what we think baed on VSI
-            # on mismatch bail out with loud cry as a rename should impact all places.
-            # TBD: try to get it first based on VC.UUID and if it fails fall back on BIOS.UUID
             with lockManager.get_lock(vm_uuid):
-                response = attach_or_detach_VMDK(cmd=cmd, vmdk_path=vmdk_path, vm_name=vm_name, bios_uuid=vm_uuid, vc_uuid=vc_uuid)
+                response = attach_or_detach_VMDK(cmd=cmd, vmdk_path=vmdk_path, vm_name=vm_name,
+                                                 bios_uuid=vm_uuid, vc_uuid=vc_uuid)
         else:
             return err("Unknown command:" + cmd)
 
