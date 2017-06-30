@@ -671,14 +671,20 @@ def vm_uuid2name(vm_uuid):
     return vm.config.name
 
 
-def attach_or_detach_VMDK(cmd, vmdk_path, vm_name, bios_uuid, vc_uuid):
+def attachVMDK(vmdk_path, vm_name, bios_uuid, vc_uuid):
+    return apply_action_VMDK(disk_attach, vmdk_path, vm_name, bios_uuid, vc_uuid)
+
+def detachVMDK(vmdk_path, vm_name, bios_uuid, vc_uuid):
+    return apply_action_VMDK(disk_detach, vmdk_path, vm_name, bios_uuid, vc_uuid)
+
+def apply_action_VMDK(action, vmdk_path, vm_name, bios_uuid, vc_uuid):
     # note: vc_uuid is the last one to avoid reworkign tests which use positional args and
     # not aware of vc_uuid
-    """Attaches (if cmd="attach" or detaches a  VMDK.
-    Returns json reply to pass upstairs"""
+    """Finds the VM and applies action(path,vm_MO) to it.
+    Returns json reply from action to pass upstairs, or json with 'err'"""
 
-    logging.info("*** %s VMDK %s to VM '%s' , bios uuid = %s, VC uuid=%s)",
-                 cmd, vmdk_path, vm_name, bios_uuid, vc_uuid)
+    logging.info("*** %s: VMDK %s to VM '%s' , bios uuid = %s, VC uuid=%s)",
+                 action.__name__, vmdk_path, vm_name, bios_uuid, vc_uuid)
     vm = None
     if vc_uuid:
         vm = findVmByUuid(vc_uuid)
@@ -693,7 +699,6 @@ def attach_or_detach_VMDK(cmd, vmdk_path, vm_name, bios_uuid, vc_uuid):
     if vm.config.name != vm_name:
         logging.warning("vm_name from vSocket '%s' does not match VM object '%s' ", vm_name, vm.config.name)
 
-    action = disk_attach if cmd == "attach" else disk_detach
     return action(vmdk_path, vm)
 
 
@@ -964,10 +969,14 @@ def executeRequest(vm_uuid, vm_name, config_path, cmd, full_vol_name, opts, vc_u
                                   datastore_url=datastore_url)
 
         # For attach/detach reconfigure tasks, hold a per vm lock.
-        elif cmd == "attach" or cmd == "detach":
+        elif cmd == "attach":
             with lockManager.get_lock(vm_uuid):
-                response = attach_or_detach_VMDK(cmd=cmd, vmdk_path=vmdk_path, vm_name=vm_name,
-                                                 bios_uuid=vm_uuid, vc_uuid=vc_uuid)
+                response = attachVMDK(vmdk_path=vmdk_path, vm_name=vm_name,
+                                      bios_uuid=vm_uuid, vc_uuid=vc_uuid)
+        elif cmd == "detach":
+            with lockManager.get_lock(vm_uuid):
+                response = detachVMDK(vmdk_path=vmdk_path, vm_name=vm_name,
+                                      bios_uuid=vm_uuid, vc_uuid=vc_uuid)
         else:
             return err("Unknown command:" + cmd)
 
