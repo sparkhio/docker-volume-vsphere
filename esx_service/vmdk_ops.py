@@ -1121,7 +1121,7 @@ def setStatusAttached(vmdk_path, vm, vm_dev_info=None):
     if not vol_meta:
         vol_meta = {}
     vol_meta[kv.STATUS] = kv.ATTACHED
-    vol_meta[kv.ATTACHED_VM_UUID] = vm.config.uuid
+    vol_meta[kv.ATTACHED_VM_UUID] = vm.config.instanceUuid
     vol_meta[kv.ATTACHED_VM_NAME] = vm.config.name
     if vm_dev_info:
         vol_meta[kv.ATTACHED_VM_DEV] = vm_dev_info
@@ -1176,19 +1176,19 @@ def getStatusAttached(vmdk_path):
     return attached, uuid, attach_as, vm_name
 
 def log_attached_volume(vmdk_path, kv_uuid, vol_name):
-       '''
-       Log appropriate message for volume thats already attached.
-       '''
-       cur_vm = findVmByUuid(kv_uuid)
+    '''
+    Log appropriate message for volume thats already attached.
+    '''
+    cur_vm = findVmByUuid(kv_uuid)
 
-       if cur_vm:
-          msg = "Disk {0} is already attached to VM {1}".format(vmdk_path,
-                                                             cur_vm.config.name)
-       else:
-          msg = "Failed to find VM {0}({1}), disk {2} is already attached".format(vol_name,
-                                                                                 kv_uuid,
-                                                                                 vmdk_path)
-       logging.warning(msg)
+    if cur_vm:
+        msg = "Disk {0} is already attached to VM {1}".format(vmdk_path,
+                                                              cur_vm.config.name)
+    else:
+        msg = "Failed to find VM {0}({1}), disk {2} is already attached".format(vol_name,
+                                                                                kv_uuid,
+                                                                                vmdk_path)
+    logging.warning(msg)
 
 def add_pvscsi_controller(vm, controllers, max_scsi_controllers, offset_from_bus_number):
     '''
