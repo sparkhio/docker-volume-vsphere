@@ -80,6 +80,12 @@ PLUGIN := github.com/$(GOPATH_ORG)/$(GOPATH_PLUGNAME)
 # test location, picking up E2E tests
 E2E_Tests := github.com/$(GOPATH_ORG)/$(PLUGNAME)/tests/e2e
 
+# Pre upgrade test location
+PRE_Upgrade_Tests := github.com/$(GOPATH_ORG)/$(PLUGNAME)/tests/e2e/pre_upgrade_test.go
+
+# Post upgrade test location
+POST_Upgrade_Tests := github.com/$(GOPATH_ORG)/$(PLUGNAME)/tests/e2e/post_upgrade_test.go
+
 GO := GO15VENDOREXPERIMENT=1 go
 FPM := fpm
 
@@ -271,6 +277,7 @@ DEPLOY_VM_SH  := $(DEPLOY_TOOLS) deployvm
 DEPLOY_VM_TEST_SH  := $(DEPLOY_TOOLS) deployvmtest
 DEPLOY_VM_PLUGIN_SH := $(DEPLOY_TOOLS) deployplugin
 DEPLOY_ESX_SH := $(DEPLOY_TOOLS) deployesx
+DEPLOY_ESX_FOR_UPGRADE := $(DEPLOY_TOOLS) deployesxForUpgrade
 CLEANVM_SH    := $(DEPLOY_TOOLS) cleanvm
 CLEANESX_SH   := $(DEPLOY_TOOLS) cleanesx
 
@@ -281,6 +288,29 @@ CLEANESX_SH   := $(DEPLOY_TOOLS) cleanesx
 .PHONY: deploy-esx deploy-vm deploy-vm-test deploy deploy-all deploy
 deploy-esx: clean-esx
 	$(DEPLOY_ESX_SH) "$(ESX)" "$(VIB_BIN)"
+
+test-upgrade:
+	$(BUILD) upgrade-test
+upgrade-test:
+	@echo "Upgrade test: from ver $(UPGRADE_FROM_VER) to ver $(UPGRADE_TO_VER)"
+	@echo "Upgrade test step 1: deploy on $(ESX) with $(FROM_VIB_URL)"
+	$(DEPLOY_ESX_FOR_UPGRADE)  "$(ESX)" "$(FROM_VIB_URL)"
+	@echo "Upgrade test step 2.1: remove plugin $(MANAGED_PLUGIN_NAME) on $(VM1)"
+	$(CLEANVM_SH) "$(VM1)" "$(MANAGED_PLUGIN_NAME)"
+	@echo "Upgrade test step 2.2: deploy plugin vmware/docker-volume-vsphere:$(UPGRADE_FROM_VER) on $(VM1)"
+	$(DEPLOY_VM_SH) "$(VM1)" vmware/docker-volume-vsphere:$(UPGRADE_FROM_VER)
+	$(SSH) $(VM1) "systemctl restart docker || service docker restart"
+	@echo "Upgrade test step 3: run pre-upgrade test"
+	$(GO) test -v -timeout 30m -tags runpreupgrade $(E2E_Tests)
+	@echo "Upgrade test step 4: deploy on $(ESX) with $(TO_VIB_URL)"
+	$(DEPLOY_ESX_FOR_UPGRADE)  "$(ESX)" "$(TO_VIB_URL)"
+	@echo "Upgrade test step 5.1: remove plugin $(MANAGED_PLUGIN_NAME) on $(VM1)"
+	$(CLEANVM_SH) "$(VM1)" "$(MANAGED_PLUGIN_NAME)"
+	@echo "Upgrade test step 5.2: deploy plugin vmware/docker-volume-vsphere:$(UPGRADE_TO_VER) on $(VM1)"
+	$(DEPLOY_VM_SH) "$(VM1)" vmware/docker-volume-vsphere:$(UPGRADE_TO_VER)
+	$(SSH) $(VM1) "systemctl restart docker || service docker restart"
+	@echo "Upgrade test step 6: run pre-upgrade test"
+	$(GO) test -v -timeout 30m -tags runpostupgrade $(E2E_Tests)
 
 VMS= $(VM1) $(VM2) $(WORKER2) $(CI_NODE4)
 
@@ -351,7 +381,7 @@ coverage:
 test-e2e:
 	$(log_target)
 	$(BUILD) test-e2e-runalways
-	$(BUILD) test-e2e-runonce
+#	$(BUILD) test-e2e-runonce
 
 #
 # E2E test target to control test run on CI.

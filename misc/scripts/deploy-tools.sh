@@ -176,6 +176,24 @@ function deployESXPost {
     fi
 }
 
+function deployESXInstallForUpgrade {
+    counter = 5
+    wait_for "$SSH $TARGET $VIB_INSTALL -v $VIB_URL" $counter
+    if [ $? -ne 0 ]
+    then
+        log "deployESXInstall: Installation hit an error on $TARGET"
+        exit 2
+    fi
+}
+
+function deployesxForUpgrade {
+        TARGET=root@$ESX
+        log "Deploying to ESX $TARGET"
+        $SSH $TARGET  rm -f /etc/vmware/vmdkops/log_config.json
+        deployESXInstallForUpgrade
+        deployESXPost
+}
+
 # cleanesx
 #
 # Does vib and tmp files cleanup on ESX
@@ -334,6 +352,14 @@ deployesx)
             usage "Missing params: folder hosting vib-name" ;
         fi
         deployesx
+        ;;
+deployesxForUpgrade)
+        VIB_URL="$2"
+        if [ -z "$VIB_URL" ]
+        then
+            usage "Missing params: URL to vib file" ;
+        fi
+        deployesxForUpgrade
         ;;
 cleanesx)
         cleanesx
