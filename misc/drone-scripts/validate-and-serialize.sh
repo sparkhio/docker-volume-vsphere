@@ -15,17 +15,18 @@
 
 # datastore name refers storage backed by base ESX (physical ESX) where
 # ongoing builds are going to create file which helps to serialize CI run
-DS='-ds=datastore1'
+#DS='-ds=datastore1'
+DS='-ds=TestDatastore'
 
 echo "TEMP: Run#7"
 
 # Lock variables to be consumed
-# build_start_lock:
+# build_lock:
 #       Overall lock makes sure only one thread at a time runs
-# build_check_lock:
+# check_lock:
 #       Represents a lock to perform cleanup leftover from previous run builds.
-build_start_lock='build-start-lock'
-build_check_lock="build-check-lock"
+build_lock="build_lock"
+check_lock="check_lock"
 
 
 # refers current CI build#
@@ -61,20 +62,35 @@ function release_lock {
     govc datastore.rm $DS docker-volume-vsphere/$1
 }
 
+# Util to create directory which in turns consumed as lock
+function acquire_lock {
+    if [ -z "$1" ] ;
+    then
+        echo "Missing argument in acquire_lock" ;
+        echo "USAGE: acquire_lock <lock_name>"
+        return 2;
+    fi
+
+    echo "Acquiring the lock  [$1]"
+    govc datastore.mkdir $DS docker-volume-vsphere/$1 2>/dev/null > /dev/null
+    return $?
+}
+
 # First it tries acquire lock "build-start-lock" which makes sure only
 # one thead (test run request gets this opportunity ) and other are
 # being blocked and keeping polling at definite interval.
 # Whichever thread gets success acquiring the "build-start-lock" lock
 # moves forward with kicking off the test run.
-while [[ $(govc datastore.mkdir $DS docker-volume-vsphere/$build_start_lock ; echo $?) -eq 1 ]]
+while ! acquire_lock $build_lock
 do
     # take build check lock
-    build_check_lock_status=`govc datastore.mkdir $DS docker-volume-vsphere/$build_check_lock; echo $?`
-    echo "check build lock status [$build_check_lock_status] (0 indicates able to lock otherwise not)"
+    acquire_lock $check_lock
+    check_lock_status=$?
+    echo "check build lock status [$check_lock_status] (0 indicates able to lock otherwise not)"
 
     isRunAllowed=1
 
-    if [[ $build_check_lock_status -eq 0 ]]
+    if [[ $check_lock_status -eq 0 ]]
     then
         # Grab ongoing build information from drone.
         runningBuild=`govc datastore.ls $DS docker-volume-vsphere/ongoing`
@@ -83,30 +99,26 @@ do
         # Let's check cleanup is needed or not
         is_cleanup_needed ${runningBuildArr[0]}
 
-        # cleans up if return value is 0 otherwise not
+        # cleans up if return value is 0 otherwise not; checking build is finished or not
         if [[ $? -eq 0 ]]
         then
-            echo "cleanup is indeed needed +++++++++++"
             release_lock "ongoing/${runningBuildArr[0]}"
-            release_lock "build-start-lock"
+            release_lock $build_lock
             isRunAllowed=0
         fi
 
-        release_lock $build_check_lock
-        if [[ isRunAllowed -eq 0 ]]
-        then
-            break
-        fi
-
+        release_lock $check_lock
+        break
+    else
+        # wait for some time to poll again
+        echo "Waiting $interval seconds for previous build ${runningBuildArr[0]} to complete";
+        sleep $interval;
     fi
-
-    # wait for some time to poll again
-    echo "Waiting $interval seconds for previous build ${runningBuildArr[0]} to complete";
-    sleep $interval;
 done
 
-# build_start_lock is acquired and adding current build# entry to ongoing folder
-echo "Lock [$build_start_lock] is acquired by $DRONE_BUILD_NUMBER"
+# build_lock is acquired and adding current build# entry to ongoing folder
+acquire_lock $build_lock
+echo "Lock [$build_lock] is acquired by $DRONE_BUILD_NUMBER"
 govc datastore.mkdir $DS docker-volume-vsphere/ongoing/$DRONE_BUILD_NUMBER
 echo "$DRONE_BUILD_NUMBER is added to ongoing folder"
 
