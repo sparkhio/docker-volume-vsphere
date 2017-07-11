@@ -291,8 +291,8 @@ deploy-esx: clean-esx
 	$(DEPLOY_ESX_SH) "$(ESX)" "$(VIB_BIN)"
 
 test-upgrade:
-	$(BUILD) upgrade-test
-upgrade-test:
+	$(BUILD) run-upgrade-test
+run-upgrade-test:
 	ESX='$(ESX)' VM1='$(VM1)' UPGRADE_FROM_VER='$(UPGRADE_FROM_VER)' UPGRADE_TO_VER='$(UPGRADE_TO_VER)' $(UPGRADE_TEST)
 #	$(UPGRADE_TEST)
 
@@ -365,7 +365,7 @@ coverage:
 test-e2e:
 	$(log_target)
 	$(BUILD) test-e2e-runalways
-#	$(BUILD) test-e2e-runonce
+	$(BUILD) test-e2e-runonce
 
 #
 # E2E test target to control test run on CI.

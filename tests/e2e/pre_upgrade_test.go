@@ -13,13 +13,15 @@
 // limitations under the License.
 
 // This test suite includes test cases to verify basic functionality
-// in most common configurations
+// before upgrade for upgrade test
 
 // +build runpreupgrade
 
 package e2e
 
 import (
+	admincliconst "github.com/vmware/docker-volume-vsphere/tests/constants/admincli"
+	dockerconst "github.com/vmware/docker-volume-vsphere/tests/constants/dockercli"
 	"github.com/vmware/docker-volume-vsphere/tests/utils/dockercli"
 	"github.com/vmware/docker-volume-vsphere/tests/utils/inputparams"
 	"github.com/vmware/docker-volume-vsphere/tests/utils/misc"
@@ -27,33 +29,34 @@ import (
 	. "gopkg.in/check.v1"
 )
 
+const (
+	testData = "Hello World!"
+	testFile = "hello.txt"
+	volPath  = dockerconst.ContainerMountPoint
+)
+
 type PreUpgradeTestSuite struct {
 	config        *inputparams.TestConfig
 	esx           string
 	vm1           string
-	vm2           string
 	vm1Name       string
-	vm2Name       string
 	volName1      string
-	volName2      string
 	containerName string
 }
 
 func (s *PreUpgradeTestSuite) SetUpSuite(c *C) {
 	s.config = inputparams.GetTestConfig()
 	if s.config == nil {
-		c.Skip("Unable to retrieve test config, skipping basic tests")
+		c.Skip("Unable to retrieve test config, skipping pre-upgrade tests")
 	}
 
 	s.esx = s.config.EsxHost
 	s.vm1 = s.config.DockerHosts[0]
-	s.vm2 = s.config.DockerHosts[1]
 	s.vm1Name = s.config.DockerHostNames[0]
-	s.vm2Name = s.config.DockerHostNames[1]
 }
 
 func (s *PreUpgradeTestSuite) SetUpTest(c *C) {
-	s.volName1 = "preUpgradeTestVol"
+	s.volName1 = admincliconst.PreUpgradeTestVol
 	s.containerName = inputparams.GetUniqueContainerName(c.TestName())
 }
 
@@ -61,7 +64,7 @@ var _ = Suite(&PreUpgradeTestSuite{})
 
 // Test steps:
 // 1. Create a volume
-// 2. Verify the volume is detached
+// 2. Verify the volume is available
 // 3. Attach the volume
 // 4. Verify volume status is attached
 // 5. Write some data to that volume
@@ -70,24 +73,22 @@ var _ = Suite(&PreUpgradeTestSuite{})
 // 8. Start container and read from container again to make sure data remains same
 // 9. Verify volume status is attached
 // 10. Remove the container
+// 11. Verify volume status is detached
 func (s *PreUpgradeTestSuite) TestVolumeLifecycle(c *C) {
-	const (
-		testData = "Hello World!"
-		testFile = "hello.txt"
-		volPath  = "/vol"
-	)
+
 	misc.LogTestStart(c.TestName())
 
 	out, err := dockercli.CreateVolume(s.vm1, s.volName1)
 	c.Assert(err, IsNil, Commentf(out))
 
-	status := verification.VerifyDetachedStatus(s.volName1, s.vm1, s.esx)
-	c.Assert(status, Equals, true, Commentf("Volume %s is not detached", s.volName1))
+	accessible := verification.CheckVolumeAvailability(s.vm1, s.volName1)
+	c.Assert(accessible, Equals, true, Commentf("Volume %s is not available on docker host %s",
+		s.volName1, s.vm1))
 
 	out, err = dockercli.AttachVolume(s.vm1, s.volName1, s.containerName)
 	c.Assert(err, IsNil, Commentf(out))
 
-	status = verification.VerifyAttachedStatus(s.volName1, s.vm1, s.esx)
+	status := verification.VerifyAttachedStatus(s.volName1, s.vm1, s.esx)
 	c.Assert(status, Equals, true, Commentf("Volume %s is not attached", s.volName1))
 
 	out, err = dockercli.WriteToContainer(s.vm1, s.containerName, volPath, testFile, testData)
@@ -95,7 +96,8 @@ func (s *PreUpgradeTestSuite) TestVolumeLifecycle(c *C) {
 
 	out, err = dockercli.ReadFromContainer(s.vm1, s.containerName, volPath, testFile)
 	c.Assert(err, IsNil, Commentf(out))
-	c.Assert(out, Equals, testData)
+	c.Assert(out, Equals, testData, Commentf("Data read from volume[%s] does not match written previously[%s]",
+		out, testData))
 
 	out, err = dockercli.StopContainer(s.vm1, s.containerName)
 	c.Assert(err, IsNil, Commentf(out))
@@ -108,12 +110,16 @@ func (s *PreUpgradeTestSuite) TestVolumeLifecycle(c *C) {
 
 	out, err = dockercli.ReadFromContainer(s.vm1, s.containerName, volPath, testFile)
 	c.Assert(err, IsNil, Commentf(out))
-	c.Assert(out, Equals, testData)
+	c.Assert(out, Equals, testData, Commentf("Data read from volume[%s] does not match written previously[%s]",
+		out, testData))
 
 	status = verification.VerifyAttachedStatus(s.volName1, s.vm1, s.esx)
 	c.Assert(status, Equals, true, Commentf("Volume %s is not attached", s.volName1))
 
 	out, err = dockercli.RemoveContainer(s.vm1, s.containerName)
 	c.Assert(err, IsNil, Commentf(out))
+
+	status = verification.VerifyDetachedStatus(s.volName1, s.vm1, s.esx)
+	c.Assert(status, Equals, true, Commentf("Volume %s is not detached", s.volName1))
 
 }

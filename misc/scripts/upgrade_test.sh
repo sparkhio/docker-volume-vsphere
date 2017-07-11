@@ -30,39 +30,39 @@
         fi
     }
 
-    VIB_URL=""
-    get_vib_url $UPGRADE_FROM_VER
-    FROM_VIB_URL=$VIB_URL
-    echo "FROM_VIB_URL=$FROM_VIB_URL"
+    # VIB_URL=""
+    # get_vib_url $UPGRADE_FROM_VER
+    # FROM_VIB_URL=$VIB_URL
+    # echo "FROM_VIB_URL=$FROM_VIB_URL"
 
-    get_vib_url $UPGRADE_TO_VER
-    FROM_VIB_URL=$VIB_URL
-    echo "TO_VIB_URL=$TO_VIB_URL"
+    # get_vib_url $UPGRADE_TO_VER
+    # FROM_VIB_URL=$VIB_URL
+    # echo "TO_VIB_URL=$TO_VIB_URL"
 
-    echo "Upgrade test: from ver $UPGRADE_FROM_VER to ver $UPGRADE_TO_VER"
+    # echo "Upgrade test: from ver $UPGRADE_FROM_VER to ver $UPGRADE_TO_VER"
 
-	echo "Upgrade test step 1: deploy on $ESX with $FROM_VIB_URL"
-	../misc/scripts/deploy-tools.sh deployesxForUpgrade $ESX $FROM_VIB_URL
+	# echo "Upgrade test step 1: deploy on $ESX with $FROM_VIB_URL"
+	# ../misc/scripts/deploy-tools.sh deployesxForUpgrade $ESX $FROM_VIB_URL
 
-	echo "Upgrade test step 2.1: remove plugin $MANAGED_PLUGIN_NAME on $VM1"
-	../misc/scripts/deploy-tools.sh cleanvm $VM1 $MANAGED_PLUGIN_NAME
+	# echo "Upgrade test step 2.1: remove plugin $MANAGED_PLUGIN_NAME on $VM1"
+	# ../misc/scripts/deploy-tools.sh cleanvm $VM1 $MANAGED_PLUGIN_NAME
 
-	echo "Upgrade test step 2.2: deploy plugin vmware/docker-volume-vsphere:$UPGRADE_FROM_VER on $VM1"
-	../misc/scripts/deploy-tools.sh deployvm $VM1 vmware/docker-volume-vsphere:$UPGRADE_FROM_VER
-	$SSH $VM1 "systemctl restart docker || service docker restart"
+	# echo "Upgrade test step 2.2: deploy plugin vmware/docker-volume-vsphere:$UPGRADE_FROM_VER on $VM1"
+	# ../misc/scripts/deploy-tools.sh deployvm $VM1 vmware/docker-volume-vsphere:$UPGRADE_FROM_VER
+	# $SSH $VM1 "systemctl restart docker || service docker restart"
 
 	echo "Upgrade test step 3: run pre-upgrade test"
 	$GO test -v -timeout 30m -tags runpreupgrade $E2E_Tests
 
-	echo "Upgrade test step 4: deploy on $ESX with $TO_VIB_URL"
-	../misc/scripts/deploy-tools.sh deployesxForUpgrade  $ESX $TO_VIB_URL
+	# echo "Upgrade test step 4: deploy on $ESX with $TO_VIB_URL"
+	# ../misc/scripts/deploy-tools.sh deployesxForUpgrade  $ESX $TO_VIB_URL
 
-	echo "Upgrade test step 5.1: remove plugin $MANAGED_PLUGIN_NAME on $VM1"
-	../misc/scripts/deploy-tools.sh cleanvm $VM1 $MANAGED_PLUGIN_NAME
+	# echo "Upgrade test step 5.1: remove plugin $MANAGED_PLUGIN_NAME on $VM1"
+	# ../misc/scripts/deploy-tools.sh cleanvm $VM1 $MANAGED_PLUGIN_NAME
 
-	echo "Upgrade test step 5.2: deploy plugin vmware/docker-volume-vsphere:$UPGRADE_TO_VER on $VM1"
-	../misc/scripts/deploy-tools.sh deployvm $VM1 vmware/docker-volume-vsphere:$UPGRADE_TO_VER
-	$SSH $VM1 "systemctl restart docker || service docker restart"
+	# echo "Upgrade test step 5.2: deploy plugin vmware/docker-volume-vsphere:$UPGRADE_TO_VER on $VM1"
+	# ../misc/scripts/deploy-tools.sh deployvm $VM1 vmware/docker-volume-vsphere:$UPGRADE_TO_VER
+	# $SSH $VM1 "systemctl restart docker || service docker restart"
 
 	echo "Upgrade test step 6: run pre-upgrade test"
 	$GO test -v -timeout 30m -tags runpostupgrade $E2E_Tests
