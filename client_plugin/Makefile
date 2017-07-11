@@ -54,6 +54,7 @@ AFTER_REMOVE   := $(SCRIPTS)/install/after-remove.sh
 CHECK	    := $(SCRIPTS)/check.sh
 BUILD       := $(SCRIPTS)/build.sh
 DEPLOY_TOOLS := $(SCRIPTS)/deploy-tools.sh
+UPGRADE_TEST := $(SCRIPTS)/upgrade_test.sh
 SYSTEMD_UNIT := $(SCRIPTS)/install/$(PLUGNAME).service
 UPSTART_CONF := $(SCRIPTS)/install/$(PLUGNAME).conf
 PACKAGE      := package
@@ -292,25 +293,8 @@ deploy-esx: clean-esx
 test-upgrade:
 	$(BUILD) upgrade-test
 upgrade-test:
-	@echo "Upgrade test: from ver $(UPGRADE_FROM_VER) to ver $(UPGRADE_TO_VER)"
-	@echo "Upgrade test step 1: deploy on $(ESX) with $(FROM_VIB_URL)"
-	$(DEPLOY_ESX_FOR_UPGRADE)  "$(ESX)" "$(FROM_VIB_URL)"
-	@echo "Upgrade test step 2.1: remove plugin $(MANAGED_PLUGIN_NAME) on $(VM1)"
-	$(CLEANVM_SH) "$(VM1)" "$(MANAGED_PLUGIN_NAME)"
-	@echo "Upgrade test step 2.2: deploy plugin vmware/docker-volume-vsphere:$(UPGRADE_FROM_VER) on $(VM1)"
-	$(DEPLOY_VM_SH) "$(VM1)" vmware/docker-volume-vsphere:$(UPGRADE_FROM_VER)
-	$(SSH) $(VM1) "systemctl restart docker || service docker restart"
-	@echo "Upgrade test step 3: run pre-upgrade test"
-	$(GO) test -v -timeout 30m -tags runpreupgrade $(E2E_Tests)
-	@echo "Upgrade test step 4: deploy on $(ESX) with $(TO_VIB_URL)"
-	$(DEPLOY_ESX_FOR_UPGRADE)  "$(ESX)" "$(TO_VIB_URL)"
-	@echo "Upgrade test step 5.1: remove plugin $(MANAGED_PLUGIN_NAME) on $(VM1)"
-	$(CLEANVM_SH) "$(VM1)" "$(MANAGED_PLUGIN_NAME)"
-	@echo "Upgrade test step 5.2: deploy plugin vmware/docker-volume-vsphere:$(UPGRADE_TO_VER) on $(VM1)"
-	$(DEPLOY_VM_SH) "$(VM1)" vmware/docker-volume-vsphere:$(UPGRADE_TO_VER)
-	$(SSH) $(VM1) "systemctl restart docker || service docker restart"
-	@echo "Upgrade test step 6: run pre-upgrade test"
-	$(GO) test -v -timeout 30m -tags runpostupgrade $(E2E_Tests)
+	ESX='$(ESX)' VM1='$(VM1)' UPGRADE_FROM_VER='$(UPGRADE_FROM_VER)' UPGRADE_TO_VER='$(UPGRADE_TO_VER)' $(UPGRADE_TEST)
+#	$(UPGRADE_TEST)
 
 VMS= $(VM1) $(VM2) $(WORKER2) $(CI_NODE4)
 
