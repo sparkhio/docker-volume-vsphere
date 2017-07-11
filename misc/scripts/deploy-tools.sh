@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 # Copyright 2016 VMware, Inc. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -177,8 +177,7 @@ function deployESXPost {
 }
 
 function deployESXInstallForUpgrade {
-    counter = 5
-    wait_for "$SSH $TARGET $VIB_INSTALL -v $VIB_URL" $counter
+    $SSH $TARGET $VIB_INSTALL -v $VIB_URL
     if [ $? -ne 0 ]
     then
         log "deployESXInstall: Installation hit an error on $TARGET"
@@ -189,7 +188,6 @@ function deployESXInstallForUpgrade {
 function deployesxForUpgrade {
         TARGET=root@$ESX
         log "Deploying to ESX $TARGET"
-        $SSH $TARGET  rm -f /etc/vmware/vmdkops/log_config.json
         deployESXInstallForUpgrade
         deployESXPost
 }
